@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Gautham Fitness — Personal Command Center</title>
+  <meta name="description" content="A private, ultra-clean, fast personal fitness command center for Gautham.">
+  <meta name="theme-color" content="#0b0f19">
+
+  <!-- PWA Metadata & iOS Capabilities -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
+  <link rel="apple-touch-icon" href="./assets/icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Fitness">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- APP HEADER -->
+    <header class="app-header">
+      <div class="brand-title">
+        <span class="brand-dot"></span>
+        <span>Gautham Fitness</span>
+      </div>
+
+      <!-- DESKTOP TOP NAVIGATION -->
+      <nav class="desktop-nav">
+        <button class="nav-link active" data-view="dashboard">Dashboard</button>
+        <button class="nav-link" data-view="nutrition">Nutrition</button>
+        <button class="nav-link" data-view="workout">Workout</button>
+        <button class="nav-link" data-view="progress">Progress</button>
+        <button class="nav-link" data-view="settings">Settings</button>
+      </nav>
+    </header>
+
+    <!-- DYNAMIC VIEW CONTAINER -->
+    <main class="main-container" id="view-container">
+      <!-- Views rendered dynamically by app.js -->
+    </main>
+
+    <!-- MOBILE BOTTOM NAVIGATION BAR -->
+    <nav class="mobile-bottom-nav">
+      <button class="mobile-nav-btn active" data-view="dashboard">
+        <span class="nav-icon">⚡</span>
+        <span>Dashboard</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="nutrition">
+        <span class="nav-icon">🍗</span>
+        <span>Nutrition</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="workout">
+        <span class="nav-icon">🏋️</span>
+        <span>Workout</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="progress">
+        <span class="nav-icon">📊</span>
+        <span>Progress</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="settings">
+        <span class="nav-icon">⚙️</span>
+        <span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- APPLICATION MODULE SCRIPT -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
