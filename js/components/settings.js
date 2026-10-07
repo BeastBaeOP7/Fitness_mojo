@@ -1,29 +1,58 @@
 /**
  * Settings Component - Profile, Goals, Reminders, Firebase & iOS Widget Export
- * Zero Browser Alerts or Prompts.
+ * Supports Google Auth & Firestore Sync under users/{firebaseAuthUid}/.
  */
 
 import { appState } from '../state.js';
-import { initializeFirebase, getFirebaseStatus } from '../firebase-service.js';
+import { getFirebaseStatus, signInWithGoogle, signOutUser } from '../firebase-service.js';
 import { showToast } from './common.js';
 
 export function renderSettings(container) {
   const profile = appState.profile;
   const reminders = appState.reminders;
   const fbStatus = getFirebaseStatus();
-  const fbConfig = appState.firebaseConfig || {};
 
   container.innerHTML = `
     <div class="settings-page animate-fade-in">
       <header class="page-header">
         <div>
           <h1 class="page-title">Settings</h1>
-          <p class="page-subtitle">Configure personal targets, Firebase storage, reminders, and exports.</p>
+          <p class="page-subtitle">Configure personal targets, Firebase cloud storage, reminders, and exports.</p>
         </div>
       </header>
 
-      <!-- SECTION 1: PROFILE & GOALS -->
+      <!-- SECTION 1: GOOGLE ACCOUNT & FIREBASE FIRESTORE -->
       <section class="dash-card settings-card mt-3">
+        <div class="sec-header-actions">
+          <h3 class="settings-sec-title">🔥 Firebase & Google Authentication</h3>
+          <span class="status-chip ${fbStatus.authenticated ? 'status-connected' : 'status-local'}">
+            ${fbStatus.authenticated ? '● Signed In & Syncing' : '○ Offline / LocalStorage'}
+          </span>
+        </div>
+        <p class="settings-desc mt-1">Firebase Project: <code>fitnessmojo-a898d</code>. User data is synced to Cloud Firestore under <code>users/{firebaseAuthUid}/</code>.</p>
+
+        <div class="auth-settings-box mt-3">
+          ${fbStatus.authenticated && fbStatus.user ? `
+            <div class="user-profile-summary">
+              ${fbStatus.user.photoURL ? `<img src="${fbStatus.user.photoURL}" class="user-avatar-large" alt="Avatar">` : `<span class="user-avatar-icon-lg">👤</span>`}
+              <div class="user-profile-meta">
+                <strong>${escapeHtml(fbStatus.user.displayName || 'Google User')}</strong>
+                <span class="user-email-text">${escapeHtml(fbStatus.user.email || '')}</span>
+                <code class="user-uid-code">UID: ${fbStatus.user.uid}</code>
+              </div>
+              <button class="btn-secondary-sm ml-auto" id="btn-settings-signout">Sign Out</button>
+            </div>
+          ` : `
+            <div class="signin-prompt-box">
+              <p>Sign in with your Google account to sync all food logs, workouts, goals, and history securely to Firebase Firestore.</p>
+              <button class="btn-primary mt-2" id="btn-settings-google-signin">🔑 Sign In with Google</button>
+            </div>
+          `}
+        </div>
+      </section>
+
+      <!-- SECTION 2: PROFILE & GOALS -->
+      <section class="dash-card settings-card mt-4">
         <h3 class="settings-sec-title">👤 Personal Profile & Targets</h3>
         <form id="form-settings-profile">
           <div class="form-row-2 mt-3">
@@ -76,7 +105,7 @@ export function renderSettings(container) {
         </form>
       </section>
 
-      <!-- SECTION 2: REMINDERS MANAGEMENT -->
+      <!-- SECTION 3: REMINDERS MANAGEMENT -->
       <section class="dash-card settings-card mt-4">
         <div class="sec-header-actions">
           <h3 class="settings-sec-title">🔔 Customizable Reminders</h3>
@@ -101,53 +130,6 @@ export function renderSettings(container) {
             </div>
           `).join('')}
         </div>
-      </section>
-
-      <!-- SECTION 3: FIREBASE FIRESTORE CONFIGURATION -->
-      <section class="dash-card settings-card mt-4">
-        <div class="sec-header-actions">
-          <h3 class="settings-sec-title">🔥 Firebase Cloud Storage</h3>
-          <span class="status-chip ${fbStatus.connected ? 'status-connected' : 'status-local'}">
-            ${fbStatus.connected ? '● Firestore Connected' : '○ Local Storage Mode'}
-          </span>
-        </div>
-        <p class="settings-desc">Enter your Firebase Web App credentials to persist data in Firestore. Single-user structure under <code>users/gautham</code>.</p>
-
-        <form id="form-settings-firebase" class="mt-3">
-          <div class="form-row-2">
-            <div class="form-group">
-              <label class="form-label">API Key</label>
-              <input type="password" class="form-input" id="fb-apiKey" value="${escapeHtml(fbConfig.apiKey || '')}" placeholder="AIzaSy...">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Project ID</label>
-              <input type="text" class="form-input" id="fb-projectId" value="${escapeHtml(fbConfig.projectId || '')}" placeholder="gautham-fitness-app">
-            </div>
-          </div>
-          <div class="form-row-2">
-            <div class="form-group">
-              <label class="form-label">Auth Domain</label>
-              <input type="text" class="form-input" id="fb-authDomain" value="${escapeHtml(fbConfig.authDomain || '')}" placeholder="project.firebaseapp.com">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Storage Bucket</label>
-              <input type="text" class="form-input" id="fb-storageBucket" value="${escapeHtml(fbConfig.storageBucket || '')}">
-            </div>
-          </div>
-          <div class="form-row-2">
-            <div class="form-group">
-              <label class="form-label">Messaging Sender ID</label>
-              <input type="text" class="form-input" id="fb-messagingSenderId" value="${escapeHtml(fbConfig.messagingSenderId || '')}">
-            </div>
-            <div class="form-group">
-              <label class="form-label">App ID</label>
-              <input type="text" class="form-input" id="fb-appId" value="${escapeHtml(fbConfig.appId || '')}">
-            </div>
-          </div>
-          <div class="form-actions mt-3">
-            <button type="submit" class="btn-primary">Connect & Save Credentials</button>
-          </div>
-        </form>
       </section>
 
       <!-- SECTION 4: APP THEME & DATA BACKUP / IOS WIDGET -->
@@ -203,6 +185,31 @@ export function renderSettings(container) {
 }
 
 function attachSettingsEvents(container) {
+  // Google Auth Sign-In / Sign-Out
+  const signInBtn = container.querySelector('#btn-settings-google-signin');
+  if (signInBtn) {
+    signInBtn.addEventListener('click', async () => {
+      try {
+        const user = await signInWithGoogle();
+        showToast(`Signed in as ${user.displayName || 'Google User'}`, 'success');
+        await appState.syncWithCloud();
+        appState.notify();
+      } catch (err) {
+        console.error('Google Sign-In Error:', err);
+        showToast('Google Sign-In failed or was cancelled');
+      }
+    });
+  }
+
+  const signOutBtn = container.querySelector('#btn-settings-signout');
+  if (signOutBtn) {
+    signOutBtn.addEventListener('click', async () => {
+      await signOutUser();
+      showToast('Signed out of Google account');
+      appState.notify();
+    });
+  }
+
   // Save Profile Form
   const profileForm = container.querySelector('#form-settings-profile');
   if (profileForm) {
@@ -243,34 +250,6 @@ function attachSettingsEvents(container) {
   if (addRemBtn) {
     addRemBtn.addEventListener('click', () => {
       openSettingsModal(container, 'add-reminder');
-    });
-  }
-
-  // Firebase Form
-  const fbForm = container.querySelector('#form-settings-firebase');
-  if (fbForm) {
-    fbForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const config = {
-        apiKey: container.querySelector('#fb-apiKey').value.trim(),
-        projectId: container.querySelector('#fb-projectId').value.trim(),
-        authDomain: container.querySelector('#fb-authDomain').value.trim(),
-        storageBucket: container.querySelector('#fb-storageBucket').value.trim(),
-        messagingSenderId: container.querySelector('#fb-messagingSenderId').value.trim(),
-        appId: container.querySelector('#fb-appId').value.trim()
-      };
-
-      appState.firebaseConfig = config;
-      appState.saveToLocalStorage();
-
-      const connected = await initializeFirebase(config);
-      if (connected) {
-        showToast('Successfully connected to Firebase Firestore!', 'success');
-        appState.syncCloudAsync();
-      } else {
-        showToast('Using LocalStorage mode. (Check Firebase keys if connection was intended)');
-      }
-      appState.notify();
     });
   }
 

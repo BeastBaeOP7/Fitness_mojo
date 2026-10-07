@@ -2,6 +2,15 @@
  * Initial Default Configuration & Seed Data for Gautham's Fitness App
  */
 
+export const FIREBASE_CONFIG = {
+  projectId: "fitnessmojo-a898d",
+  authDomain: "fitnessmojo-a898d.firebaseapp.com",
+  storageBucket: "fitnessmojo-a898d.firebasestorage.app",
+  messagingSenderId: "392517507591",
+  appId: "1:392517507591:web:ac5400922515904c47e8a2",
+  apiKey: "" // Loaded dynamically from saved settings or filled by user
+};
+
 export const DEFAULT_PROFILE = {
   name: 'Gautham',
   age: 26,
@@ -215,7 +224,7 @@ export const INITIAL_WORKOUT_PLAN = [
     ]
   },
   {
-    dayIndex: 0, // Sunday / Day 7
+    dayIndex: 0,
     name: 'Day 7 — Rest',
     tag: 'Recovery & Mobility',
     isRest: true,

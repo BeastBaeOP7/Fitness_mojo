@@ -1,6 +1,7 @@
 /**
  * Central State Manager for Personal Fitness Command Center
- * Supports Date Navigation, Full Manual Workout Cycle Control, and Historical Snapshots.
+ * Supports Date Navigation, Full Manual Workout Cycle Control, Historical Snapshots,
+ * and Cloud Firestore Persistence under users/{firebaseAuthUid}/.
  */
 
 import {
@@ -9,9 +10,18 @@ import {
   INITIAL_SAVED_MEALS,
   INITIAL_EXERCISE_LIBRARY,
   INITIAL_WORKOUT_PLAN,
-  INITIAL_REMINDERS
+  INITIAL_REMINDERS,
+  FIREBASE_CONFIG
 } from './config.js';
-import { initializeFirebase, saveUserDataToCloud, fetchUserDataFromCloud } from './firebase-service.js';
+import {
+  initializeFirebase,
+  setupAuthStateListener,
+  saveUserDataToFirestore,
+  fetchUserDataFromFirestore,
+  fetchDailyLogFromFirestore,
+  saveDailyLogToFirestore,
+  getFirebaseStatus
+} from './firebase-service.js';
 
 const STORAGE_KEYS = {
   PROFILE: 'fit_profile',
@@ -53,12 +63,19 @@ class AppState {
     // 1. Load from localStorage
     this.loadFromLocalStorage();
 
-    // 2. Try loading Firebase config & syncing if available
-    if (this.firebaseConfig) {
-      const connected = await initializeFirebase(this.firebaseConfig);
-      if (connected) {
-        await this.syncWithCloud();
-      }
+    // 2. Initialize Firebase once with centralized config
+    const initialized = await initializeFirebase(this.firebaseConfig || FIREBASE_CONFIG);
+    if (initialized) {
+      setupAuthStateListener(async (user) => {
+        if (user) {
+          console.log('[Auth] Google user logged in:', user.displayName, 'UID:', user.uid);
+          if (user.displayName && (!this.profile.name || this.profile.name === 'Gautham')) {
+            this.profile.name = user.displayName.split(' ')[0];
+          }
+          await this.syncWithCloud();
+          this.notify();
+        }
+      });
     }
 
     // Ensure Oct 7, 2026 default cycle position is Day 2 — Back + Biceps (index 1)
@@ -142,24 +159,56 @@ class AppState {
   }
 
   async syncCloudAsync() {
-    if (!this.firebaseConfig) return;
-    saveUserDataToCloud('profile', this.profile);
-    saveUserDataToCloud('workoutPlan', { plan: this.workoutPlan });
-    saveUserDataToCloud('dailyLogs', { logs: this.dailyLogs });
-    saveUserDataToCloud('reminders', { reminders: this.reminders });
-    saveUserDataToCloud('savedFoods', { foods: this.savedFoods });
-    saveUserDataToCloud('savedMeals', { meals: this.savedMeals });
+    const status = getFirebaseStatus();
+    if (!status.authenticated) return;
+
+    saveUserDataToFirestore('profile', this.profile);
+    saveUserDataToFirestore('goals', {
+      proteinTargetG: this.profile.proteinTargetG,
+      waterTargetL: this.profile.waterTargetL,
+      stepTarget: this.profile.stepTarget,
+      workoutTargetDaysPerWeek: this.profile.workoutTargetDaysPerWeek,
+      goalSummary: this.profile.goalSummary
+    });
+    saveUserDataToFirestore('foods', { foods: this.savedFoods });
+    saveUserDataToFirestore('savedMeals', { meals: this.savedMeals });
+    saveUserDataToFirestore('workoutPlans', { plan: this.workoutPlan });
+    saveUserDataToFirestore('reminders', { reminders: this.reminders });
+    saveUserDataToFirestore('bodyMeasurements', { measurements: this.bodyMeasurements });
+
+    const log = this.getSelectedDateLog();
+    if (log) {
+      saveDailyLogToFirestore(this.selectedDateStr, log);
+    }
   }
 
   async syncWithCloud() {
-    const cloudProfile = await fetchUserDataFromCloud('profile');
+    const status = getFirebaseStatus();
+    if (!status.authenticated) return;
+
+    const cloudProfile = await fetchUserDataFromFirestore('profile');
     if (cloudProfile) this.profile = { ...this.profile, ...cloudProfile };
 
-    const cloudPlan = await fetchUserDataFromCloud('workoutPlan');
+    const cloudGoals = await fetchUserDataFromFirestore('goals');
+    if (cloudGoals) this.profile = { ...this.profile, ...cloudGoals };
+
+    const cloudFoods = await fetchUserDataFromFirestore('foods');
+    if (cloudFoods && cloudFoods.foods) this.savedFoods = cloudFoods.foods;
+
+    const cloudMeals = await fetchUserDataFromFirestore('savedMeals');
+    if (cloudMeals && cloudMeals.meals) this.savedMeals = cloudMeals.meals;
+
+    const cloudPlan = await fetchUserDataFromFirestore('workoutPlans');
     if (cloudPlan && cloudPlan.plan) this.workoutPlan = cloudPlan.plan;
 
-    const cloudLogs = await fetchUserDataFromCloud('dailyLogs');
-    if (cloudLogs && cloudLogs.logs) this.dailyLogs = { ...this.dailyLogs, ...cloudLogs.logs };
+    const cloudReminders = await fetchUserDataFromFirestore('reminders');
+    if (cloudReminders && cloudReminders.reminders) this.reminders = cloudReminders.reminders;
+
+    const cloudBody = await fetchUserDataFromFirestore('bodyMeasurements');
+    if (cloudBody && cloudBody.measurements) this.bodyMeasurements = cloudBody.measurements;
+
+    const cloudLog = await fetchDailyLogFromFirestore(this.selectedDateStr);
+    if (cloudLog) this.dailyLogs[this.selectedDateStr] = cloudLog;
   }
 
   applyTheme(theme) {
