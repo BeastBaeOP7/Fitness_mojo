@@ -1,7 +1,7 @@
 /**
  * Nutrition Component - Gautham's Protein & Food Workspace
- * Features Date Navigation, In-Page Modals (Zero Browser Prompts), Multi-Item Food Logging,
- * Saved Foods Library (with Edit/Delete), and Saved Meals Templates.
+ * Redesigned Compact Summary Layout, Dedicated Protein Target Control & Modal,
+ * Multi-Item Food Logging, Saved Foods Library, and Saved Meals Templates.
  */
 
 import { appState } from '../state.js';
@@ -15,48 +15,55 @@ export function renderNutrition(container) {
   const remainingProtein = Math.max(0, proteinTarget - totalProtein);
   const proteinPct = Math.min(100, Math.round((totalProtein / proteinTarget) * 100));
 
+  // Format date display for card header
+  const [y, m, d] = appState.selectedDateStr.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
   container.innerHTML = `
     <div class="nutrition-page animate-fade-in">
       <!-- DATE NAVIGATOR BAR -->
       ${renderDateBar()}
 
-      <header class="page-header mt-3">
-        <div>
-          <h1 class="page-title">Nutrition Workspace</h1>
-          <p class="page-subtitle">Track food items, protein targets, water, and saved meal templates.</p>
+      <!-- COMPACT NUTRITION SUMMARY CARD -->
+      <div class="dash-card nutrition-compact-card mt-3">
+        <div class="nut-card-header">
+          <div>
+            <h2 class="nut-header-title">NUTRITION</h2>
+            <p class="nut-header-date">${escapeHtml(formattedDate)}</p>
+          </div>
         </div>
-      </header>
 
-      <!-- PROTEIN & WATER SUMMARY CARD -->
-      <div class="dash-card nutrition-summary-card">
-        <div class="summary-main">
-          <div class="summary-metric">
-            <span class="metric-label">Date Protein</span>
-            <span class="metric-val highlight-protein">${totalProtein.toFixed(1)} <span class="unit">/ ${proteinTarget}g</span></span>
+        <div class="nut-summary-grid">
+          <div class="nut-metric-box">
+            <span class="nut-metric-label">Protein</span>
+            <span class="nut-metric-val highlight-protein">${totalProtein.toFixed(0)} <span class="unit">/ ${proteinTarget} g</span></span>
           </div>
-          <div class="summary-metric">
-            <span class="metric-label">Remaining</span>
-            <span class="metric-val">${remainingProtein.toFixed(1)}g</span>
+          <div class="nut-metric-box">
+            <span class="nut-metric-label">Remaining</span>
+            <span class="nut-metric-val">${remainingProtein.toFixed(0)} g</span>
           </div>
-          <div class="summary-metric">
-            <span class="metric-label">Water Intake</span>
-            <span class="metric-val highlight-water">${log.waterIntakeL.toFixed(1)} <span class="unit">/ ${profile.waterTargetL}L</span></span>
+          <div class="nut-metric-box">
+            <span class="nut-metric-label">Water</span>
+            <span class="nut-metric-val highlight-water">${log.waterIntakeL.toFixed(1)} <span class="unit">/ ${profile.waterTargetL} L</span></span>
           </div>
         </div>
-        <div class="progress-bar-track mt-2 mb-2">
+
+        <div class="progress-bar-track mt-3 mb-3">
           <div class="progress-bar-fill protein-fill" style="width: ${proteinPct}%"></div>
         </div>
-        <div class="summary-actions">
-          <button class="btn-primary" id="btn-open-add-food-modal">+ Log Food Item</button>
-          <button class="btn-secondary" id="btn-calc-protein-target">Target Calculator</button>
+
+        <div class="nut-actions-row">
+          <button class="btn-primary" id="btn-open-add-food-modal">+ Log Food</button>
+          <button class="btn-secondary" id="btn-open-protein-target-modal">Protein Target</button>
         </div>
       </div>
 
       <!-- TABS FOR NUTRITION SECTIONS -->
-      <div class="tab-subnav">
+      <div class="tab-subnav mt-4">
         <button class="tab-btn active" data-nut-tab="today-log">Logged Food (${log.foodEntries.length})</button>
         <button class="tab-btn" data-nut-tab="saved-foods">Saved Foods Library (${appState.savedFoods.length})</button>
-        <button class="tab-btn" data-nut-tab="saved-meals">Saved Meal Templates (${appState.savedMeals.length})</button>
+        <button class="tab-btn" data-nut-tab="saved-meals">Saved Meals (${appState.savedMeals.length})</button>
       </div>
 
       <!-- SUBTAB 1: LOGGED FOOD FOR SELECTED DATE -->
@@ -73,7 +80,7 @@ export function renderNutrition(container) {
               ${log.foodEntries.map(entry => `
                 <div class="dash-card food-entry-card" data-entry-id="${entry.id}">
                   <div class="food-entry-info">
-                    <span class="food-name">${escapeHtml(entry.name)}</span>
+                    <strong class="food-name">${escapeHtml(entry.name)}</strong>
                     <span class="food-qty">${escapeHtml(entry.qty)} ${entry.timestamp ? '• ' + entry.timestamp : ''} ${entry.sourceMealName ? '• From: ' + escapeHtml(entry.sourceMealName) : ''}</span>
                   </div>
                   <div class="food-entry-protein">
@@ -93,7 +100,7 @@ export function renderNutrition(container) {
       <!-- SUBTAB 2: SAVED FOODS LIBRARY -->
       <div class="nut-tab-pane" id="pane-saved-foods">
         <div class="pane-header-actions">
-          <p class="pane-desc">Custom food items and preloaded high-protein foods. Click <strong>+ Add</strong> to quickly log to ${appState.selectedDateStr}.</p>
+          <p class="pane-desc">Custom ingredients & high-protein preset foods. Click <strong>+ Add</strong> to log to ${appState.selectedDateStr}.</p>
           <button class="btn-secondary-sm" id="btn-create-saved-food">+ New Saved Food</button>
         </div>
         <div class="saved-foods-grid">
@@ -105,7 +112,7 @@ export function renderNutrition(container) {
                 <p class="saved-food-meta">${escapeHtml(food.defaultQty)} · <strong class="highlight-protein">${food.proteinG}g protein</strong></p>
               </div>
               <div class="food-card-actions mt-2">
-                <button class="btn-primary-sm btn-quick-log-food" data-food-id="${food.id}">+ Add to Date</button>
+                <button class="btn-primary-sm btn-quick-log-food" data-food-id="${food.id}">+ Add</button>
                 <button class="btn-micro btn-edit-saved-food" data-food-id="${food.id}">Edit</button>
                 <button class="btn-micro btn-delete-saved-food" data-food-id="${food.id}">Delete</button>
               </div>
@@ -114,10 +121,10 @@ export function renderNutrition(container) {
         </div>
       </div>
 
-      <!-- SUBTAB 3: SAVED MEALS (REUSABLE TEMPLATES) -->
+      <!-- SUBTAB 3: SAVED MEALS (TEMPLATES) -->
       <div class="nut-tab-pane" id="pane-saved-meals">
         <div class="pane-header-actions">
-          <p class="pane-desc">Multi-item reusable meal templates. Adding a meal creates independent copies in your target date log.</p>
+          <p class="pane-desc">Reusable meal templates. Adding a saved meal creates isolated copies in your date log.</p>
           <button class="btn-secondary-sm" id="btn-create-saved-meal">+ New Meal Template</button>
         </div>
         <div class="saved-meals-grid">
@@ -186,6 +193,14 @@ function attachNutritionEvents(container) {
 
   if (openAddFoodBtn) openAddFoodBtn.addEventListener('click', handlerOpenAdd);
   if (emptyAddFoodBtn) emptyAddFoodBtn.addEventListener('click', handlerOpenAdd);
+
+  // Protein Target Modal
+  const targetModalBtn = container.querySelector('#btn-open-protein-target-modal');
+  if (targetModalBtn) {
+    targetModalBtn.addEventListener('click', () => {
+      openFoodModal(container, 'protein-target');
+    });
+  }
 
   // Edit / Delete Logged Food Entries
   container.querySelectorAll('.edit-entry-btn').forEach(btn => {
@@ -282,14 +297,6 @@ function attachNutritionEvents(container) {
     });
   }
 
-  // Target Calculator Button
-  const calcProteinBtn = container.querySelector('#btn-calc-protein-target');
-  if (calcProteinBtn) {
-    calcProteinBtn.addEventListener('click', () => {
-      openFoodModal(container, 'calc-target');
-    });
-  }
-
   // Modal Close Button
   const modalOverlay = container.querySelector('#nutrition-modal-overlay');
   const modalClose = container.querySelector('#nut-modal-close');
@@ -308,20 +315,26 @@ function openFoodModal(container, mode, payload = null) {
   modalOverlay.style.display = 'flex';
 
   if (mode === 'add-food') {
-    modalTitle.textContent = `Log Food Item (${appState.selectedDateStr})`;
+    modalTitle.textContent = `Log Food (${appState.selectedDateStr})`;
     modalBody.innerHTML = `
       <form id="form-add-food-log">
         <div class="form-group">
           <label class="form-label">Food Name</label>
-          <input type="text" class="form-input" id="inp-food-name" placeholder="e.g. Chicken Breast, Whey Shake, Paneer" required>
+          <input type="text" class="form-input" id="inp-food-name" placeholder="e.g. Chicken Breast" required>
         </div>
-        <div class="form-group">
-          <label class="form-label">Quantity / Serving Size</label>
-          <input type="text" class="form-input" id="inp-food-qty" placeholder="e.g. 150g, 1 scoop, 3 eggs" value="100g" required>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="number" step="0.1" class="form-input" id="inp-food-qty-num" placeholder="150" value="150" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <input type="text" class="form-input" id="inp-food-unit" placeholder="g / scoop / serving" value="g" required>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Protein (grams)</label>
-          <input type="number" step="0.1" class="form-input" id="inp-food-protein" placeholder="e.g. 30" required>
+          <input type="number" step="0.1" class="form-input" id="inp-food-protein" placeholder="e.g. 46" required>
         </div>
         <div class="form-actions mt-3">
           <button type="button" class="btn-secondary-sm mr-2" id="btn-nut-modal-cancel">Cancel</button>
@@ -337,24 +350,43 @@ function openFoodModal(container, mode, payload = null) {
     container.querySelector('#form-add-food-log').addEventListener('submit', (e) => {
       e.preventDefault();
       const name = container.querySelector('#inp-food-name').value.trim();
-      const qty = container.querySelector('#inp-food-qty').value.trim();
+      const qtyNum = container.querySelector('#inp-food-qty-num').value.trim();
+      const unit = container.querySelector('#inp-food-unit').value.trim();
       const proteinG = parseFloat(container.querySelector('#inp-food-protein').value);
 
-      appState.addFoodEntryToLog({ name, qty, proteinG }, appState.selectedDateStr);
+      appState.addFoodEntryToLog({ name, qty: qtyNum, unit, proteinG }, appState.selectedDateStr);
       modalOverlay.style.display = 'none';
       showToast(`Added ${name} (${proteinG}g protein)`);
     });
   } else if (mode === 'edit-food' && payload) {
     modalTitle.textContent = 'Edit Logged Food Item';
+    
+    // Parse raw quantity and unit if stored separately or together
+    let rawQty = payload.rawQty || '100';
+    let unit = payload.unit || 'g';
+    if (!payload.rawQty && payload.qty) {
+      const match = payload.qty.match(/^([\d.]+)\s*(.*)$/);
+      if (match) {
+        rawQty = match[1];
+        unit = match[2] || 'g';
+      }
+    }
+
     modalBody.innerHTML = `
       <form id="form-edit-food-log">
         <div class="form-group">
           <label class="form-label">Food Name</label>
           <input type="text" class="form-input" id="inp-edit-food-name" value="${escapeHtml(payload.name)}" required>
         </div>
-        <div class="form-group">
-          <label class="form-label">Quantity</label>
-          <input type="text" class="form-input" id="inp-edit-food-qty" value="${escapeHtml(payload.qty)}" required>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="number" step="0.1" class="form-input" id="inp-edit-food-qty-num" value="${escapeHtml(rawQty)}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <input type="text" class="form-input" id="inp-edit-food-unit" value="${escapeHtml(unit)}" required>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Protein (grams)</label>
@@ -374,12 +406,95 @@ function openFoodModal(container, mode, payload = null) {
     container.querySelector('#form-edit-food-log').addEventListener('submit', (e) => {
       e.preventDefault();
       const name = container.querySelector('#inp-edit-food-name').value.trim();
-      const qty = container.querySelector('#inp-edit-food-qty').value.trim();
+      const qtyNum = container.querySelector('#inp-edit-food-qty-num').value.trim();
+      const unitVal = container.querySelector('#inp-edit-food-unit').value.trim();
       const proteinG = parseFloat(container.querySelector('#inp-edit-food-protein').value);
 
-      appState.updateFoodEntry(payload.id, { name, qty, proteinG }, appState.selectedDateStr);
+      appState.updateFoodEntry(payload.id, { name, qty: qtyNum, unit: unitVal, proteinG }, appState.selectedDateStr);
       modalOverlay.style.display = 'none';
       showToast('Food entry updated');
+    });
+  } else if (mode === 'protein-target') {
+    const curTarget = appState.profile.proteinTargetG;
+    const curWeight = appState.profile.weightKg || 74.5;
+    const defaultRate = 1.8;
+    const initialSuggested = Math.round(curWeight * defaultRate);
+
+    modalTitle.textContent = 'Protein Target';
+    modalBody.innerHTML = `
+      <form id="form-protein-target">
+        <p class="settings-desc mb-2">Current target: <strong>${curTarget} g/day</strong></p>
+        
+        <div class="form-group">
+          <label class="form-label">Set Manually</label>
+          <div class="input-with-unit">
+            <input type="number" class="form-input" id="inp-manual-target" value="${curTarget}" required>
+            <span class="input-unit-label">g / day</span>
+          </div>
+        </div>
+
+        <div class="calc-section-box mt-3 mb-3">
+          <h4 class="calc-box-title">Optional: Calculate from body weight</h4>
+          <div class="form-row-2 mt-2">
+            <div class="form-group">
+              <label class="form-label">Weight (kg)</label>
+              <input type="number" step="0.1" class="form-input" id="inp-calc-weight" value="${curWeight}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Protein per kg</label>
+              <input type="number" step="0.1" class="form-input" id="inp-calc-rate" value="${defaultRate}">
+            </div>
+          </div>
+          <div class="calc-result-row">
+            <span>Suggested target:</span>
+            <strong id="calc-suggested-val" class="highlight-protein">${initialSuggested} g/day</strong>
+            <button type="button" class="btn-micro ml-auto" id="btn-use-suggested">Use Suggested</button>
+          </div>
+        </div>
+
+        <div class="form-actions mt-3">
+          <button type="button" class="btn-secondary-sm mr-2" id="btn-nut-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save Target</button>
+        </div>
+      </form>
+    `;
+
+    const weightInput = container.querySelector('#inp-calc-weight');
+    const rateInput = container.querySelector('#inp-calc-rate');
+    const suggestedDisplay = container.querySelector('#calc-suggested-val');
+    const manualInput = container.querySelector('#inp-manual-target');
+    const useSuggestedBtn = container.querySelector('#btn-use-suggested');
+
+    const updateSuggested = () => {
+      const w = parseFloat(weightInput.value) || 0;
+      const r = parseFloat(rateInput.value) || 0;
+      const sug = Math.round(w * r);
+      suggestedDisplay.textContent = `${sug} g/day`;
+    };
+
+    weightInput.addEventListener('input', updateSuggested);
+    rateInput.addEventListener('input', updateSuggested);
+
+    useSuggestedBtn.addEventListener('click', () => {
+      const w = parseFloat(weightInput.value) || 0;
+      const r = parseFloat(rateInput.value) || 0;
+      const sug = Math.round(w * r);
+      manualInput.value = sug;
+    });
+
+    container.querySelector('#btn-nut-modal-cancel').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
+
+    container.querySelector('#form-protein-target').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const newTarget = parseInt(manualInput.value, 10);
+      if (!isNaN(newTarget) && newTarget > 0) {
+        appState.profile.proteinTargetG = newTarget;
+        appState.notify();
+        modalOverlay.style.display = 'none';
+        showToast(`Daily protein target updated to ${newTarget}g`);
+      }
     });
   } else if (mode === 'confirm-delete-entry' && payload) {
     modalTitle.textContent = 'Delete Logged Food';
@@ -581,50 +696,6 @@ function openFoodModal(container, mode, payload = null) {
         appState.addSavedMeal({ name: mealName, items });
         modalOverlay.style.display = 'none';
         showToast('Saved meal template created!');
-      }
-    });
-  } else if (mode === 'calc-target') {
-    const w = appState.profile.weightKg || 74.5;
-    const recModerate = Math.round(w * 1.6);
-    const recHigh = Math.round(w * 2.2);
-
-    modalTitle.textContent = 'Protein Target Calculator';
-    modalBody.innerHTML = `
-      <form id="form-calc-protein">
-        <p class="settings-desc mb-3">Based on your logged body weight (<strong>${w} kg</strong>):</p>
-        <div class="recs-list mb-3">
-          <div class="rec-item">
-            <span>Maintenance & General Fitness (1.6g/kg)</span>
-            <strong>~${recModerate}g / day</strong>
-          </div>
-          <div class="rec-item mt-2">
-            <span>Muscle Growth & Hypertrophy (2.2g/kg)</span>
-            <strong>~${recHigh}g / day</strong>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Set New Daily Protein Target (grams)</label>
-          <input type="number" class="form-input" id="inp-new-protein-target" value="${appState.profile.proteinTargetG}" required>
-        </div>
-        <div class="form-actions mt-3">
-          <button type="button" class="btn-secondary-sm mr-2" id="btn-nut-modal-cancel">Cancel</button>
-          <button type="submit" class="btn-primary">Set Target</button>
-        </div>
-      </form>
-    `;
-
-    container.querySelector('#btn-nut-modal-cancel').addEventListener('click', () => {
-      modalOverlay.style.display = 'none';
-    });
-
-    container.querySelector('#form-calc-protein').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const val = parseInt(container.querySelector('#inp-new-protein-target').value, 10);
-      if (!isNaN(val) && val > 0) {
-        appState.profile.proteinTargetG = val;
-        appState.notify();
-        modalOverlay.style.display = 'none';
-        showToast(`Daily protein target updated to ${val}g`);
       }
     });
   }
