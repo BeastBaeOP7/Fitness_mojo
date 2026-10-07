@@ -1,5 +1,6 @@
 /**
  * Central State Manager for Personal Fitness Command Center
+ * Supports Date Navigation, Full Manual Workout Cycle Control, and Historical Snapshots.
  */
 
 import {
@@ -28,11 +29,11 @@ class AppState {
   constructor() {
     this.listeners = [];
     this.profile = { ...DEFAULT_PROFILE };
-    this.workoutPlan = [...INITIAL_WORKOUT_PLAN];
-    this.exerciseLibrary = [...INITIAL_EXERCISE_LIBRARY];
-    this.savedFoods = [...INITIAL_INDIAN_FOODS];
-    this.savedMeals = [...INITIAL_SAVED_MEALS];
-    this.reminders = [...INITIAL_REMINDERS];
+    this.workoutPlan = JSON.parse(JSON.stringify(INITIAL_WORKOUT_PLAN));
+    this.exerciseLibrary = JSON.parse(JSON.stringify(INITIAL_EXERCISE_LIBRARY));
+    this.savedFoods = JSON.parse(JSON.stringify(INITIAL_INDIAN_FOODS));
+    this.savedMeals = JSON.parse(JSON.stringify(INITIAL_SAVED_MEALS));
+    this.reminders = JSON.parse(JSON.stringify(INITIAL_REMINDERS));
     this.dailyLogs = {};
     this.bodyMeasurements = [];
     this.firebaseConfig = null;
@@ -49,7 +50,7 @@ class AppState {
   }
 
   async init() {
-    // 1. Load from localStorage first (for immediate instant render)
+    // 1. Load from localStorage
     this.loadFromLocalStorage();
 
     // 2. Try loading Firebase config & syncing if available
@@ -60,7 +61,7 @@ class AppState {
       }
     }
 
-    // Ensure today's log exists
+    // Ensure selected date log exists
     this.ensureDailyLog(this.selectedDateStr);
     
     // Apply theme
@@ -129,7 +130,6 @@ class AppState {
       console.warn('Error saving to localStorage:', err);
     }
 
-    // Asynchronously update Firebase if connected
     this.syncCloudAsync();
   }
 
@@ -155,7 +155,9 @@ class AppState {
   }
 
   applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
   }
 
   setTheme(theme) {
@@ -164,17 +166,57 @@ class AppState {
     this.notify();
   }
 
-  // --- DAILY LOG HELPERS ---
+  // --- DATE NAVIGATION CONTROL ---
+  setSelectedDate(dateStr) {
+    if (!dateStr) return;
+    this.selectedDateStr = dateStr;
+    this.ensureDailyLog(this.selectedDateStr);
+    this.notify();
+  }
+
+  navigateDate(deltaDays) {
+    const [y, m, d] = this.selectedDateStr.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    dateObj.setDate(dateObj.getDate() + deltaDays);
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    this.selectedDateStr = `${year}-${month}-${day}`;
+    this.ensureDailyLog(this.selectedDateStr);
+    this.notify();
+  }
+
+  setToday() {
+    this.selectedDateStr = this.getTodayStr();
+    this.ensureDailyLog(this.selectedDateStr);
+    this.notify();
+  }
+
+  isTodaySelected() {
+    return this.selectedDateStr === this.getTodayStr();
+  }
+
+  // --- DAILY LOG SNAPSHOT INITIALIZATION ---
   ensureDailyLog(dateStr = this.selectedDateStr) {
     if (!this.dailyLogs[dateStr]) {
-      // Determine day of week for workout plan initialization
-      // Note: Javascript Date parse of YYYY-MM-DD treats it as UTC, so parse manually
+      // Find default plan index for initial assignment
+      // If previous calendar day log exists, advance by 1 in cycle; else use index 0
+      let chosenPlanIndex = 0;
       const [y, m, d] = dateStr.split('-').map(Number);
-      const dateObj = new Date(y, m - 1, d);
-      const dayOfWeek = dateObj.getDay(); // 0 = Sun, 1 = Mon ... 6 = Sat
+      const prevDate = new Date(y, m - 1, d - 1);
+      const prevYear = prevDate.getFullYear();
+      const prevMonth = String(prevDate.getMonth() + 1).padStart(2, '0');
+      const prevDay = String(prevDate.getDate()).padStart(2, '0');
+      const prevDateStr = `${prevYear}-${prevMonth}-${prevDay}`;
 
-      // Find matching workout plan day (matching dayIndex or order)
-      const scheduledWorkout = this.workoutPlan.find(plan => plan.dayIndex === dayOfWeek) || this.workoutPlan[0];
+      if (this.dailyLogs[prevDateStr] && this.dailyLogs[prevDateStr].workout) {
+        const prevPlanIdx = this.dailyLogs[prevDateStr].workout.planDayIndex;
+        if (typeof prevPlanIdx === 'number' && this.workoutPlan.length > 0) {
+          chosenPlanIndex = (prevPlanIdx + 1) % this.workoutPlan.length;
+        }
+      }
+
+      const scheduledWorkout = this.workoutPlan[chosenPlanIndex] || this.workoutPlan[0];
 
       this.dailyLogs[dateStr] = {
         dateStr,
@@ -184,7 +226,7 @@ class AppState {
         weightKg: null,
         completedReminders: [],
         workout: {
-          planDayId: scheduledWorkout ? scheduledWorkout.dayIndex : 0,
+          planDayIndex: chosenPlanIndex,
           name: scheduledWorkout ? scheduledWorkout.name : 'Rest Day',
           tag: scheduledWorkout ? scheduledWorkout.tag : 'Rest',
           isRest: scheduledWorkout ? scheduledWorkout.isRest : false,
@@ -197,13 +239,43 @@ class AppState {
     return this.dailyLogs[dateStr];
   }
 
-  getTodayLog() {
+  getSelectedDateLog() {
     return this.ensureDailyLog(this.selectedDateStr);
   }
 
-  // --- NUTRITION LOGGING ---
-  addFoodEntryToToday(entry) {
-    const log = this.getTodayLog();
+  getTodayLog() {
+    return this.ensureDailyLog(this.getTodayStr());
+  }
+
+  // --- WORKOUT DAY ASSIGNMENT OVERRIDE ---
+  assignWorkoutDayToLog(planIndex, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
+    const targetPlanDay = this.workoutPlan[planIndex];
+    if (!targetPlanDay) return;
+
+    // Snapshot selected workout day into target date's log
+    const prevCompleted = log.workout ? (log.workout.completedExercises || []) : [];
+    log.workout = {
+      planDayIndex: planIndex,
+      name: targetPlanDay.name,
+      tag: targetPlanDay.tag || '',
+      isRest: targetPlanDay.isRest || false,
+      exercises: JSON.parse(JSON.stringify(targetPlanDay.exercises || [])),
+      completedExercises: prevCompleted.filter(name => (targetPlanDay.exercises || []).some(e => e.name === name)),
+      completed: false
+    };
+
+    // Re-check completion
+    if (log.workout.exercises.length > 0 && log.workout.completedExercises.length >= log.workout.exercises.length) {
+      log.workout.completed = true;
+    }
+
+    this.notify();
+  }
+
+  // --- NUTRITION LOGGING (DATE-AWARE) ---
+  addFoodEntryToLog(entry, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     const newEntry = {
       id: 'fe_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       name: entry.name || 'Custom Food',
@@ -215,8 +287,8 @@ class AppState {
     this.notify();
   }
 
-  updateFoodEntry(entryId, updatedFields) {
-    const log = this.getTodayLog();
+  updateFoodEntry(entryId, updatedFields, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     const index = log.foodEntries.findIndex(e => e.id === entryId);
     if (index !== -1) {
       log.foodEntries[index] = { ...log.foodEntries[index], ...updatedFields };
@@ -224,18 +296,18 @@ class AppState {
     }
   }
 
-  deleteFoodEntry(entryId) {
-    const log = this.getTodayLog();
+  deleteFoodEntry(entryId, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     log.foodEntries = log.foodEntries.filter(e => e.id !== entryId);
     this.notify();
   }
 
-  addSavedMealToToday(mealId) {
+  addSavedMealToLog(mealId, dateStr = this.selectedDateStr) {
     const meal = this.savedMeals.find(m => m.id === mealId);
     if (!meal) return;
-    const log = this.getTodayLog();
+    const log = this.ensureDailyLog(dateStr);
 
-    // Create discrete copy of items for today's log (Data Integrity requirement!)
+    // Create discrete copy of items for selected date log (Data Integrity requirement!)
     meal.items.forEach(item => {
       log.foodEntries.push({
         id: 'fe_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -249,41 +321,45 @@ class AppState {
     this.notify();
   }
 
+  getSelectedDateTotalProtein() {
+    const log = this.getSelectedDateLog();
+    return log.foodEntries.reduce((sum, item) => sum + (Number(item.proteinG) || 0), 0);
+  }
+
   // --- WATER LOGGING ---
-  addWaterIntake(amountL) {
-    const log = this.getTodayLog();
+  addWaterIntake(amountL, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     log.waterIntakeL = Math.max(0, Number((log.waterIntakeL + amountL).toFixed(2)));
     this.notify();
   }
 
-  setWaterIntake(totalL) {
-    const log = this.getTodayLog();
+  setWaterIntake(totalL, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     log.waterIntakeL = Math.max(0, Number(totalL.toFixed(2)));
     this.notify();
   }
 
   // --- STEPS & WEIGHT ---
-  setSteps(steps) {
-    const log = this.getTodayLog();
+  setSteps(steps, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     log.steps = Math.max(0, parseInt(steps, 10) || 0);
     this.notify();
   }
 
-  setWeight(weightKg) {
-    const log = this.getTodayLog();
+  setWeight(weightKg, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     const w = parseFloat(weightKg);
     log.weightKg = isNaN(w) ? null : w;
-    if (log.weightKg !== null) {
+    if (log.weightKg !== null && dateStr === this.getTodayStr()) {
       this.profile.weightKg = log.weightKg;
-      // Also add to body measurements history
-      this.addBodyMeasurement({ weightKg: log.weightKg, date: this.selectedDateStr });
+      this.addBodyMeasurement({ weightKg: log.weightKg, date: dateStr });
     }
     this.notify();
   }
 
   // --- WORKOUT TRACKING ---
-  toggleExerciseCompletion(exerciseName) {
-    const log = this.getTodayLog();
+  toggleExerciseCompletion(exerciseName, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     if (!log.workout) return;
 
     const list = log.workout.completedExercises || [];
@@ -306,8 +382,8 @@ class AppState {
     this.notify();
   }
 
-  completeWorkoutManually() {
-    const log = this.getTodayLog();
+  completeWorkoutManually(dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     if (!log.workout) return;
     log.workout.completedExercises = log.workout.exercises.map(e => e.name);
     log.workout.completed = true;
@@ -315,8 +391,8 @@ class AppState {
   }
 
   // --- REMINDERS TRACKING ---
-  toggleReminderCompletion(reminderId) {
-    const log = this.getTodayLog();
+  toggleReminderCompletion(reminderId, dateStr = this.selectedDateStr) {
+    const log = this.ensureDailyLog(dateStr);
     const list = log.completedReminders || [];
     const index = list.indexOf(reminderId);
     if (index === -1) {
@@ -339,6 +415,20 @@ class AppState {
     };
     this.savedFoods.push(newFood);
     this.notify();
+  }
+
+  updateSavedFood(id, updatedFood) {
+    const idx = this.savedFoods.findIndex(f => f.id === id);
+    if (idx !== -1) {
+      this.savedFoods[idx] = {
+        ...this.savedFoods[idx],
+        name: updatedFood.name,
+        defaultQty: updatedFood.defaultQty || '100g',
+        proteinG: Number(updatedFood.proteinG) || 0,
+        category: updatedFood.category || 'Custom'
+      };
+      this.notify();
+    }
   }
 
   deleteSavedFood(id) {
@@ -451,11 +541,6 @@ class AppState {
   }
 
   // --- STAT CALCULATIONS & STREAKS ---
-  getTodayTotalProtein() {
-    const log = this.getTodayLog();
-    return log.foodEntries.reduce((sum, item) => sum + (Number(item.proteinG) || 0), 0);
-  }
-
   calculateStreaks() {
     let proteinStreak = 0;
     let workoutStreak = 0;
@@ -467,7 +552,7 @@ class AppState {
     // Daily log streak
     for (const date of dates) {
       const log = this.dailyLogs[date];
-      if (log && (log.foodEntries.length > 0 || log.workout.completed || log.waterIntakeL > 0)) {
+      if (log && (log.foodEntries.length > 0 || (log.workout && log.workout.completed) || log.waterIntakeL > 0)) {
         dailyLogStreak++;
       } else {
         break;
@@ -486,7 +571,7 @@ class AppState {
       }
     }
 
-    // Workout streak (consecutive target workouts completed)
+    // Workout streak
     for (const date of dates) {
       const log = this.dailyLogs[date];
       if (!log) break;
@@ -498,10 +583,9 @@ class AppState {
     return { proteinStreak, workoutStreak, dailyLogStreak };
   }
 
-  // Widget Export Format
   getIOSWidgetData() {
     const todayLog = this.getTodayLog();
-    const totalProt = this.getTodayTotalProtein();
+    const totalProt = this.getSelectedDateTotalProtein();
     return {
       updatedAt: new Date().toISOString(),
       user: this.profile.name,

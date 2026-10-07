@@ -1,9 +1,11 @@
 /**
  * Workout Component - Gautham's Workout & Exercise Command Center
- * Clean, customizable 7-day split, Exercise Library, Exercise History, and Muscle History.
+ * Supports Date Control, In-Page Modals (Zero Browser Prompts), Weekly Plan Editing,
+ * Exercise Library, Exercise History, and Muscle Volume Analytics.
  */
 
 import { appState } from '../state.js';
+import { renderDateBar, attachDateBarEvents, showToast } from './common.js';
 
 export function renderWorkout(container) {
   const plan = appState.workoutPlan;
@@ -11,25 +13,28 @@ export function renderWorkout(container) {
 
   container.innerHTML = `
     <div class="workout-page animate-fade-in">
-      <header class="page-header">
+      <!-- DATE NAVIGATOR BAR -->
+      ${renderDateBar()}
+
+      <header class="page-header mt-3">
         <div>
           <h1 class="page-title">Workouts & Library</h1>
-          <p class="page-subtitle">Manage your weekly plan, exercise history, and muscle volume.</p>
+          <p class="page-subtitle">Manage your 7-day training split, exercise library, history, and muscle volume.</p>
         </div>
       </header>
 
       <!-- SUBTAB NAVIGATION -->
       <div class="tab-subnav">
-        <button class="tab-btn active" data-wo-tab="weekly-plan">Weekly Plan (${plan.length} Days)</button>
+        <button class="tab-btn active" data-wo-tab="weekly-plan">Weekly Plan Split (${plan.length} Days)</button>
         <button class="tab-btn" data-wo-tab="exercise-library">Exercise Library (${library.length})</button>
         <button class="tab-btn" data-wo-tab="exercise-history">Exercise History</button>
-        <button class="tab-btn" data-wo-tab="muscle-history">Muscle History</button>
+        <button class="tab-btn" data-wo-tab="muscle-history">Muscle Volume</button>
       </div>
 
       <!-- TAB 1: WEEKLY WORKOUT PLAN -->
       <div class="wo-tab-pane active" id="pane-weekly-plan">
         <div class="pane-header-actions">
-          <p class="pane-desc">Customize your training split. Add, edit, reorder, or duplicate workout days.</p>
+          <p class="pane-desc">Customize your 7-day training split templates. Add, edit, reorder, or duplicate workout days.</p>
           <button class="btn-primary-sm" id="btn-add-workout-day">+ Add Workout Day</button>
         </div>
 
@@ -78,8 +83,8 @@ export function renderWorkout(container) {
       <!-- TAB 2: EXERCISE LIBRARY -->
       <div class="wo-tab-pane" id="pane-exercise-library">
         <div class="pane-header-actions">
-          <p class="pane-desc">All exercises are preloaded with muscle metadata (primary muscle, target region, secondary muscles).</p>
-          <button class="btn-primary-sm" id="btn-add-custom-exercise">+ New Exercise</button>
+          <p class="pane-desc">Preloaded exercise library with muscle metadata (primary muscle, target region, secondary muscles).</p>
+          <button class="btn-primary-sm" id="btn-add-custom-exercise">+ New Custom Exercise</button>
         </div>
 
         <div class="exercise-filter-bar">
@@ -103,12 +108,12 @@ export function renderWorkout(container) {
       <!-- TAB 3: EXERCISE HISTORY -->
       <div class="wo-tab-pane" id="pane-exercise-history">
         <div class="pane-header-actions">
-          <p class="pane-desc">Track completion history and past performance per exercise.</p>
+          <p class="pane-desc">Track completion history and past performance per exercise across recorded dates.</p>
         </div>
 
         <div class="history-filter-bar">
           <select class="form-select" id="ex-history-select">
-            <option value="ALL">Select Exercise...</option>
+            <option value="ALL">All Exercises...</option>
             ${library.map(ex => `<option value="${escapeHtml(ex.name)}">${escapeHtml(ex.name)}</option>`).join('')}
           </select>
         </div>
@@ -118,10 +123,10 @@ export function renderWorkout(container) {
         </div>
       </div>
 
-      <!-- TAB 4: MUSCLE HISTORY -->
+      <!-- TAB 4: MUSCLE VOLUME -->
       <div class="wo-tab-pane" id="pane-muscle-history">
         <div class="pane-header-actions">
-          <p class="pane-desc">Visual history of target muscle groups trained based on your completed logs.</p>
+          <p class="pane-desc">Visual summary of target muscle groups trained across your actual logged workouts.</p>
         </div>
         <div class="muscle-grid" id="muscle-grid-container">
           ${renderMuscleHistory()}
@@ -141,6 +146,7 @@ export function renderWorkout(container) {
     </div>
   `;
 
+  attachDateBarEvents(container);
   attachWorkoutEvents(container);
 }
 
@@ -181,12 +187,11 @@ function renderExerciseHistory(selectedExName) {
     return `
       <div class="empty-state">
         <div class="empty-icon">📊</div>
-        <p>${selectedExName === 'ALL' ? 'No exercise completions recorded yet. Complete exercises from the dashboard!' : 'No recorded sessions for ' + escapeHtml(selectedExName) + '.'}</p>
+        <p>${selectedExName === 'ALL' ? 'No exercise completions recorded yet. Check off exercises from the Dashboard!' : 'No recorded sessions for ' + escapeHtml(selectedExName) + '.'}</p>
       </div>
     `;
   }
 
-  // Sort newest first
   historyEntries.sort((a, b) => b.date.localeCompare(a.date));
 
   return `
@@ -228,7 +233,6 @@ function renderMuscleHistory() {
 
           if (muscleCounts[cat] !== undefined) muscleCounts[cat]++;
 
-          // Match sub-regions
           Object.keys(muscleCounts).forEach(m => {
             if (reg.toLowerCase().includes(m.toLowerCase())) {
               muscleCounts[m]++;
@@ -294,6 +298,7 @@ function attachWorkoutEvents(container) {
         copy.dayIndex = plan.length + 1;
         plan.push(copy);
         appState.updateWorkoutPlan(plan);
+        showToast('Workout day duplicated!');
       }
     });
   });
@@ -301,11 +306,7 @@ function attachWorkoutEvents(container) {
   container.querySelectorAll('.btn-delete-day').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const dayIdx = parseInt(e.currentTarget.getAttribute('data-day-index'), 10);
-      const plan = appState.workoutPlan;
-      if (confirm(`Delete ${plan[dayIdx].name}?`)) {
-        plan.splice(dayIdx, 1);
-        appState.updateWorkoutPlan(plan);
-      }
+      openWorkoutModal(container, 'confirm-delete-day', { dayIdx });
     });
   });
 
@@ -316,6 +317,7 @@ function attachWorkoutEvents(container) {
       const plan = appState.workoutPlan;
       plan[dIdx].exercises.splice(eIdx, 1);
       appState.updateWorkoutPlan(plan);
+      showToast('Exercise removed from day');
     });
   });
 
@@ -401,10 +403,15 @@ function openWorkoutModal(container, mode, payload = null) {
           </select>
         </div>
         <div class="form-actions mt-3">
+          <button type="button" class="btn-secondary-sm mr-2" id="btn-wo-modal-cancel">Cancel</button>
           <button type="submit" class="btn-primary">Add Day to Plan</button>
         </div>
       </form>
     `;
+
+    container.querySelector('#btn-wo-modal-cancel').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
 
     container.querySelector('#form-add-wo-day').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -423,6 +430,7 @@ function openWorkoutModal(container, mode, payload = null) {
 
       appState.updateWorkoutPlan(plan);
       modalOverlay.style.display = 'none';
+      showToast('New workout day added!');
     });
   } else if (mode === 'edit-day' && payload) {
     const day = appState.workoutPlan[payload.dayIdx];
@@ -445,10 +453,15 @@ function openWorkoutModal(container, mode, payload = null) {
           </select>
         </div>
         <div class="form-actions mt-3">
+          <button type="button" class="btn-secondary-sm mr-2" id="btn-wo-modal-cancel">Cancel</button>
           <button type="submit" class="btn-primary">Save Changes</button>
         </div>
       </form>
     `;
+
+    container.querySelector('#btn-wo-modal-cancel').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
 
     container.querySelector('#form-edit-wo-day').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -458,6 +471,28 @@ function openWorkoutModal(container, mode, payload = null) {
 
       appState.updateWorkoutPlan(appState.workoutPlan);
       modalOverlay.style.display = 'none';
+      showToast('Workout day updated');
+    });
+  } else if (mode === 'confirm-delete-day' && payload) {
+    const dayName = appState.workoutPlan[payload.dayIdx] ? appState.workoutPlan[payload.dayIdx].name : '';
+    modalTitle.textContent = 'Delete Workout Day';
+    modalBody.innerHTML = `
+      <p class="mb-3">Delete <strong>${escapeHtml(dayName)}</strong> from your workout plan?</p>
+      <div class="form-actions">
+        <button class="btn-secondary-sm mr-2" id="btn-cancel-day-del">Cancel</button>
+        <button class="btn-danger-sm" id="btn-confirm-day-del">Delete Day</button>
+      </div>
+    `;
+
+    container.querySelector('#btn-cancel-day-del').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
+
+    container.querySelector('#btn-confirm-day-del').addEventListener('click', () => {
+      appState.workoutPlan.splice(payload.dayIdx, 1);
+      appState.updateWorkoutPlan(appState.workoutPlan);
+      modalOverlay.style.display = 'none';
+      showToast('Workout day deleted');
     });
   } else if (mode === 'add-ex-to-day' && payload) {
     modalTitle.textContent = 'Add Exercise to Day';
@@ -482,10 +517,15 @@ function openWorkoutModal(container, mode, payload = null) {
           <input type="text" class="form-input" id="inp-ex-note" placeholder="e.g. Short-head bias, slow eccentric">
         </div>
         <div class="form-actions mt-3">
+          <button type="button" class="btn-secondary-sm mr-2" id="btn-wo-modal-cancel">Cancel</button>
           <button type="submit" class="btn-primary">Add Exercise</button>
         </div>
       </form>
     `;
+
+    container.querySelector('#btn-wo-modal-cancel').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
 
     container.querySelector('#form-add-ex-to-day').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -510,6 +550,7 @@ function openWorkoutModal(container, mode, payload = null) {
 
       appState.updateWorkoutPlan(plan);
       modalOverlay.style.display = 'none';
+      showToast('Exercise added to day!');
     });
   } else if (mode === 'add-custom-exercise') {
     modalTitle.textContent = 'Create Custom Exercise';
@@ -535,10 +576,15 @@ function openWorkoutModal(container, mode, payload = null) {
           <input type="text" class="form-input" id="inp-custom-ex-target" placeholder="e.g. Upper Chest, Lats, Side Delts" required>
         </div>
         <div class="form-actions mt-3">
-          <button type="submit" class="btn-primary">Save to Exercise Library</button>
+          <button type="button" class="btn-secondary-sm mr-2" id="btn-wo-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save to Library</button>
         </div>
       </form>
     `;
+
+    container.querySelector('#btn-wo-modal-cancel').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
 
     container.querySelector('#form-create-custom-ex').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -548,6 +594,7 @@ function openWorkoutModal(container, mode, payload = null) {
 
       appState.addCustomExerciseToLibrary({ name, primaryCategory, targetRegion });
       modalOverlay.style.display = 'none';
+      showToast('Custom exercise saved!');
     });
   }
 }

@@ -1,9 +1,10 @@
 /**
  * Progress Component - Gautham's Fitness Analytics & Trends
- * Clean, useful Weekly and Monthly charts, Streaks, and Body Measurements.
+ * Clean Weekly and Monthly charts, Streaks, and Body Measurements.
  */
 
 import { appState } from '../state.js';
+import { showToast } from './common.js';
 
 let activeCharts = [];
 
@@ -192,6 +193,7 @@ export function renderProgress(container) {
                 <input type="text" class="form-input" id="bm-notes" placeholder="e.g. Morning fasted measurement">
               </div>
               <div class="form-actions mt-3">
+                <button type="button" class="btn-secondary-sm mr-2" id="btn-prog-cancel">Cancel</button>
                 <button type="submit" class="btn-primary">Save Measurement</button>
               </div>
             </form>
@@ -201,7 +203,6 @@ export function renderProgress(container) {
     </div>
   `;
 
-  // Attach event handlers and load charts for default 7 days
   attachProgressEvents(container);
   loadCharts(7);
 }
@@ -229,10 +230,11 @@ function attachProgressEvents(container) {
     });
   });
 
-  // Modal open
+  // Modal open & close
   const addBodyBtn = container.querySelector('#btn-add-body-log');
   const modalOverlay = container.querySelector('#progress-modal-overlay');
   const modalClose = container.querySelector('#prog-modal-close');
+  const cancelBtn = container.querySelector('#btn-prog-cancel');
 
   if (addBodyBtn) {
     addBodyBtn.addEventListener('click', () => {
@@ -242,6 +244,12 @@ function attachProgressEvents(container) {
 
   if (modalClose) {
     modalClose.addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
       modalOverlay.style.display = 'none';
     });
   }
@@ -261,12 +269,12 @@ function attachProgressEvents(container) {
         notes: container.querySelector('#bm-notes').value.trim()
       });
       modalOverlay.style.display = 'none';
+      showToast('Body measurement saved!');
     });
   }
 }
 
 async function loadCharts(daysCount) {
-  // Ensure Chart.js is loaded
   if (typeof window.Chart === 'undefined') {
     try {
       await loadScript('https://cdn.jsdelivr.net/npm/chart.js');
@@ -276,11 +284,9 @@ async function loadCharts(daysCount) {
     }
   }
 
-  // Destroy previous chart instances
   activeCharts.forEach(c => c.destroy());
   activeCharts = [];
 
-  // Prepare dates array
   const labels = [];
   const proteinData = [];
   const waterData = [];
@@ -314,11 +320,9 @@ async function loadCharts(daysCount) {
     }
   }
 
-  // Common dark theme colors
   const gridColor = 'rgba(255, 255, 255, 0.06)';
   const textColor = '#94a3b8';
 
-  // Helper chart builder
   const createChart = (canvasId, label, data, color, type = 'line', targetVal = null) => {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;

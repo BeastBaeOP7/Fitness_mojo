@@ -1,9 +1,11 @@
 /**
  * Settings Component - Profile, Goals, Reminders, Firebase & iOS Widget Export
+ * Zero Browser Alerts or Prompts.
  */
 
 import { appState } from '../state.js';
 import { initializeFirebase, getFirebaseStatus } from '../firebase-service.js';
+import { showToast } from './common.js';
 
 export function renderSettings(container) {
   const profile = appState.profile;
@@ -16,7 +18,7 @@ export function renderSettings(container) {
       <header class="page-header">
         <div>
           <h1 class="page-title">Settings</h1>
-          <p class="page-subtitle">Configure your personal targets, Firebase cloud storage, reminders, and iOS Widget exports.</p>
+          <p class="page-subtitle">Configure personal targets, Firebase storage, reminders, and exports.</p>
         </div>
       </header>
 
@@ -80,7 +82,7 @@ export function renderSettings(container) {
           <h3 class="settings-sec-title">🔔 Customizable Reminders</h3>
           <button class="btn-secondary-sm" id="btn-add-new-reminder">+ Add Reminder</button>
         </div>
-        <p class="settings-desc">Only active/enabled reminders appear on your dashboard. Zero forced push notifications.</p>
+        <p class="settings-desc">Only enabled reminders appear on your active dashboard. Zero forced push notifications.</p>
 
         <div class="reminders-settings-list mt-3">
           ${reminders.map(rem => `
@@ -143,7 +145,7 @@ export function renderSettings(container) {
             </div>
           </div>
           <div class="form-actions mt-3">
-            <button type="submit" class="btn-primary">Connect & Save Firebase Credentials</button>
+            <button type="submit" class="btn-primary">Connect & Save Credentials</button>
           </div>
         </form>
       </section>
@@ -166,7 +168,7 @@ export function renderSettings(container) {
         <div class="setting-option-row mt-4">
           <div>
             <strong>iOS Widget Data JSON</strong>
-            <p class="settings-desc">Export current live data formatted specifically for Apple Health / iOS Widget extensions.</p>
+            <p class="settings-desc">Export live data formatted for Apple Health / iOS Widget extensions.</p>
           </div>
           <button class="btn-secondary-sm" id="btn-export-widget-json">Export iOS Widget JSON</button>
         </div>
@@ -218,7 +220,7 @@ function attachSettingsEvents(container) {
       p.goalSummary = container.querySelector('#set-goal-summary').value.trim();
 
       appState.notify();
-      alert('Profile and personal goals updated successfully!');
+      showToast('Profile and goals saved!');
     });
   }
 
@@ -233,9 +235,7 @@ function attachSettingsEvents(container) {
   container.querySelectorAll('.btn-delete-rem').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const id = e.currentTarget.getAttribute('data-id');
-      if (confirm('Delete this reminder?')) {
-        appState.deleteReminderConfig(id);
-      }
+      openSettingsModal(container, 'confirm-delete-reminder', { id });
     });
   });
 
@@ -265,10 +265,10 @@ function attachSettingsEvents(container) {
 
       const connected = await initializeFirebase(config);
       if (connected) {
-        alert('🎉 Successfully connected to Firebase Firestore!');
+        showToast('Successfully connected to Firebase Firestore!', 'success');
         appState.syncCloudAsync();
       } else {
-        alert('Could not connect to Firebase with the provided details. Switched to LocalStorage mode.');
+        showToast('Using LocalStorage mode. (Check Firebase keys if connection was intended)');
       }
       appState.notify();
     });
@@ -288,6 +288,7 @@ function attachSettingsEvents(container) {
     exportWidgetBtn.addEventListener('click', () => {
       const widgetData = appState.getIOSWidgetData();
       downloadJSON(widgetData, `ios_fitness_widget_${appState.getTodayStr()}.json`);
+      showToast('Exported iOS Widget JSON');
     });
   }
 
@@ -306,6 +307,7 @@ function attachSettingsEvents(container) {
         bodyMeasurements: appState.bodyMeasurements
       };
       downloadJSON(fullBackup, `gautham_fitness_backup_${appState.getTodayStr()}.json`);
+      showToast('Exported full backup file');
     });
   }
 
@@ -327,9 +329,9 @@ function attachSettingsEvents(container) {
           if (data.dailyLogs) appState.dailyLogs = data.dailyLogs;
 
           appState.notify();
-          alert('Full backup successfully restored!');
+          showToast('Full backup restored successfully!', 'success');
         } catch (err) {
-          alert('Error parsing JSON backup file.');
+          showToast('Error parsing JSON backup file.');
         }
       };
       reader.readAsText(file);
@@ -346,7 +348,7 @@ function attachSettingsEvents(container) {
   }
 }
 
-function openSettingsModal(container, mode) {
+function openSettingsModal(container, mode, payload = null) {
   const modalOverlay = container.querySelector('#settings-modal-overlay');
   const modalTitle = container.querySelector('#set-modal-title');
   const modalBody = container.querySelector('#set-modal-body');
@@ -373,10 +375,15 @@ function openSettingsModal(container, mode) {
           </select>
         </div>
         <div class="form-actions mt-3">
+          <button type="button" class="btn-secondary-sm mr-2" id="btn-set-modal-cancel">Cancel</button>
           <button type="submit" class="btn-primary">Save Reminder</button>
         </div>
       </form>
     `;
+
+    container.querySelector('#btn-set-modal-cancel').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
 
     container.querySelector('#form-add-rem').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -392,6 +399,26 @@ function openSettingsModal(container, mode) {
       });
 
       modalOverlay.style.display = 'none';
+      showToast('Reminder added!');
+    });
+  } else if (mode === 'confirm-delete-reminder' && payload) {
+    modalTitle.textContent = 'Delete Reminder';
+    modalBody.innerHTML = `
+      <p class="mb-3">Delete this reminder?</p>
+      <div class="form-actions">
+        <button class="btn-secondary-sm mr-2" id="btn-cancel-rem-del">Cancel</button>
+        <button class="btn-danger-sm" id="btn-confirm-rem-del">Delete</button>
+      </div>
+    `;
+
+    container.querySelector('#btn-cancel-rem-del').addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
+
+    container.querySelector('#btn-confirm-rem-del').addEventListener('click', () => {
+      appState.deleteReminderConfig(payload.id);
+      modalOverlay.style.display = 'none';
+      showToast('Reminder deleted');
     });
   }
 }

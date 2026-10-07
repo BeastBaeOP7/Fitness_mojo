@@ -1,36 +1,38 @@
 /**
  * Health Integration Boundary Service
  * Standardized integration point for Browser/PWA Health APIs, Native Bridges, and Apple Health.
+ * NEVER fabricates fake health metrics or random steps.
  */
 
 import { appState } from './state.js';
 
 export class HealthService {
   constructor() {
-    this.isSupported = 'geolocation' in navigator || 'DeviceMotionEvent' in window;
-    this.isMockingSync = false;
+    this.isNativeBridgeAvailable = typeof window !== 'undefined' && typeof window.AppleHealthBridge !== 'undefined';
   }
 
-  // Request native health sync permissions or fallback to web motion sensor step estimation
-  async requestHealthAccess() {
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-      try {
-        const response = await DeviceMotionEvent.requestPermission();
-        return response === 'granted';
-      } catch (err) {
-        console.warn('DeviceMotionEvent permission error:', err);
-        return false;
-      }
+  // Returns clear status of native health connection
+  getConnectionStatus() {
+    if (typeof window !== 'undefined' && window.AppleHealthBridge && typeof window.AppleHealthBridge.fetchTodayMetrics === 'function') {
+      return {
+        connected: true,
+        label: 'Connected',
+        message: 'Connected to Apple Health native bridge.'
+      };
     }
-    return true;
+
+    return {
+      connected: false,
+      label: 'Not connected',
+      message: 'Native Apple Health bridge not detected. Step and weight data can be manually logged.'
+    };
   }
 
-  // Query health metrics (Steps, Water, Sleep, Heart rate)
+  // Query health metrics from real native bridge if present
   async syncHealthData() {
-    const todayLog = appState.getTodayLog();
+    const selectedLog = appState.getSelectedDateLog();
     
-    // Check if window.AppleHealthBridge exists (e.g. if rendered inside WKWebView / iOS App Wrapper)
-    if (window.AppleHealthBridge && typeof window.AppleHealthBridge.fetchTodayMetrics === 'function') {
+    if (typeof window !== 'undefined' && window.AppleHealthBridge && typeof window.AppleHealthBridge.fetchTodayMetrics === 'function') {
       try {
         const metrics = await window.AppleHealthBridge.fetchTodayMetrics();
         if (metrics.steps !== undefined) appState.setSteps(metrics.steps);
@@ -41,21 +43,11 @@ export class HealthService {
       }
     }
 
-    // Default return current values
     return {
-      success: true,
-      source: 'Local / Manual Data Boundary',
-      steps: todayLog.steps,
-      weightKg: todayLog.weightKg
+      success: false,
+      source: 'Not connected',
+      message: 'Health Data is Not Connected'
     };
-  }
-
-  // Simulate health data sync for testing
-  simulateSync() {
-    const currentSteps = appState.getTodayLog().steps;
-    const addedSteps = Math.floor(Math.random() * 800) + 200;
-    appState.setSteps(currentSteps + addedSteps);
-    return currentSteps + addedSteps;
   }
 }
 
